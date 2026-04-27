@@ -1,0 +1,21 @@
+apiVersion: pool.dataverse.redhat.com/v1alpha1
+kind: ResourceClaim
+metadata:
+  name: my-snowflake-claim
+  namespace: default
+spec:
+  # Type of resource to claim (must match a registered provider)
+  type: snowflake
+
+  # How long to hold the resource (optional, defaults to 1h)
+  leaseDuration: 2h
+
+  # Filter resources by labels (optional)
+  # Only Snowflake accounts with matching labels will be assigned
+  requiredLabels:
+    tier: standard
+    region: us-east-1
+
+  # Priority for assignment (optional, defaults to 0)
+  # Higher priority claims are assigned first when multiple are pending
+  priority: 0

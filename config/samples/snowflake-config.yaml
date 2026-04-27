@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snowflake-config
+  namespace: default
+data:
+  config.yaml: |
+    accounts:
+      - name: test-cluster-1
+        accountUrl: xy12345.us-east-1.snowflakecomputing.com
+        warehouse: COMPUTE_WH
+        database: TEST_DB
+        schema: PUBLIC
+        role: ACCOUNTADMIN
+        credentialSecretName: sf-test-cluster-1-creds
+        labels:
+          tier: standard
+          region: us-east-1
+        resetQueries:
+          - "DROP TABLE IF EXISTS TEMP_TABLE_1"
+          - "DROP TABLE IF EXISTS TEMP_TABLE_2"
+
+      - name: test-cluster-2
+        accountUrl: xy12346.us-east-1.snowflakecomputing.com
+        warehouse: COMPUTE_WH
+        database: TEST_DB
+        schema: PUBLIC
+        role: ACCOUNTADMIN
+        credentialSecretName: sf-test-cluster-2-creds
+        labels:
+          tier: standard
+          region: us-east-1
+        resetQueries:
+          - "DROP TABLE IF EXISTS TEMP_TABLE_1"
+          - "DROP TABLE IF EXISTS TEMP_TABLE_2"
+
+

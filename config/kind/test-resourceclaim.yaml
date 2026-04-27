@@ -1,0 +1,10 @@
+apiVersion: pool.dataverse.redhat.com/v1alpha1
+kind: ResourceClaim
+metadata:
+  name: test-claim
+  namespace: default
+spec:
+  type: snowflake
+  leaseDuration: 1h
+  requiredLabels:
+    environment: test

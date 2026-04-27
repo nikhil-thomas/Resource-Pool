@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- pool_v1alpha1_resourceclaim.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snowflake-config
+  namespace: default
+data:
+  config.yaml: |
+    accounts:
+      - name: my-cluster-1
+        accountUrl: <account-id>.snowflakecomputing.com
+        warehouse: <warehouse-name>
+        database: ""
+        schema: ""
+        role: <role-name>
+        credentialSecretName: sf-cluster-1-creds
+        labels:
+          cluster: my-cluster
+          environment: test
+        resetQueries:
+          # - "DROP TABLE IF EXISTS TEMP_TABLE_1"
+          # - "DROP SCHEMA IF EXISTS TEMP_SCHEMA CASCADE"
+
+      - name: my-cluster-2
+        accountUrl: <account-id>.snowflakecomputing.com
+        warehouse: <warehouse-name>
+        database: ""
+        schema: ""
+        role: <role-name>
+        credentialSecretName: sf-cluster-2-creds
+        labels:
+          cluster: my-cluster
+          environment: test
+        resetQueries:
+          # - "DROP TABLE IF EXISTS TEMP_TABLE_1"
+          # - "DROP SCHEMA IF EXISTS TEMP_SCHEMA CASCADE"

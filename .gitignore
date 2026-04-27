@@ -30,3 +30,10 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Local config and secrets (contain sensitive credentials)
+config/kind/snowflake-secrets.yaml
+snowflake-config.yaml
+snowflake-secrets.yaml
+
+bin/
