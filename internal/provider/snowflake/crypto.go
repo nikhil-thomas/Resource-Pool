@@ -34,10 +34,13 @@ func GenerateKeyPair() (privateKeyPEM []byte, publicKeyPEM string, err error) {
 		return nil, "", fmt.Errorf("failed to generate private key: %w", err)
 	}
 
-	// Encode private key to PEM
-	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privateKey)
+	// Encode private key to PEM in PKCS8 format (required by the gosnowflake driver)
+	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to marshal private key: %w", err)
+	}
 	privateKeyPEM = pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
+		Type:  "PRIVATE KEY",
 		Bytes: privateKeyBytes,
 	})
 

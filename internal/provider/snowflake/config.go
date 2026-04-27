@@ -50,6 +50,11 @@ type SnowflakeAccount struct {
 	// Example: {"tier": "standard", "region": "us-east-1"}
 	Labels map[string]string `yaml:"labels"`
 
+	// AppUserRoles are the Snowflake roles to grant to the app user (test_runner_appuser)
+	// on acquire and revoke on release.
+	// Example: ["ACCOUNTADMIN"]
+	AppUserRoles []string `yaml:"appUserRoles,omitempty"`
+
 	// ResetQueries are SQL statements to run during cleanup
 	// Example: ["DROP TABLE IF EXISTS TEMP_TABLE_1", "DROP SCHEMA IF EXISTS TEMP_SCHEMA CASCADE"]
 	ResetQueries []string `yaml:"resetQueries,omitempty"`

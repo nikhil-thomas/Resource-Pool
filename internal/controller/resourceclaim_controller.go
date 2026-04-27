@@ -132,14 +132,16 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: requeueAfterPending}, nil
 	}
 
-	// Get resource details from provider
-	resource := r.ProviderRegistry.GetResource(claim.Spec.Type, resourceName)
-	if resource == nil {
+	// Get resource details from provider — take a value copy so mutations below
+	// don't corrupt the shared registry entry.
+	resourcePtr := r.ProviderRegistry.GetResource(claim.Spec.Type, resourceName)
+	if resourcePtr == nil {
 		claim.Status.Phase = "Failed"
 		claim.Status.Message = fmt.Sprintf("Resource %s not found in provider cache", resourceName)
 		r.Status().Update(ctx, claim)
 		return ctrl.Result{}, nil
 	}
+	resource := *resourcePtr // local copy — safe to mutate
 
 	// Determine lease duration
 	duration := 1 * time.Hour // default
@@ -158,14 +160,22 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: requeueAfterError}, nil
 	}
 
-	// Call provider's AcquireResource hook
-	if err := prov.AcquireResource(ctx, *resource, holderIdentity); err != nil {
+	// Call provider's AcquireResource hook — returns the name of the per-claim credential secret.
+	secretName, err := prov.AcquireResource(ctx, resource, holderIdentity)
+	if err != nil {
 		log.Error(err, "Provider AcquireResource failed")
-		// Don't fail the claim, just log
+		claim.Status.Phase = "Failed"
+		claim.Status.Message = fmt.Sprintf("Failed to acquire resource: %v", err)
+		r.Status().Update(ctx, claim)
+		r.LeaseManager.ReleaseLease(ctx, leaseLease.Name)
+		return ctrl.Result{RequeueAfter: requeueAfterError}, nil
+	}
+	if secretName != "" {
+		resource.CredentialSecretName = secretName
 	}
 
 	// Get connection details from provider
-	connDetails, err := prov.GetConnectionDetails(ctx, *resource)
+	connDetails, err := prov.GetConnectionDetails(ctx, resource)
 	if err != nil {
 		log.Error(err, "Failed to get connection details")
 		claim.Status.Phase = "Failed"
@@ -260,7 +270,7 @@ func (r *ResourceClaimReconciler) handleDeletion(ctx context.Context, claim *poo
 		resource := r.ProviderRegistry.GetResource(claim.Spec.Type, resourceName)
 		if resource != nil {
 			// Perform provider-specific cleanup
-			if err := prov.ReleaseResource(ctx, r.Namespace, *resource); err != nil {
+			if err := prov.ReleaseResource(ctx, r.Namespace, *resource, fmt.Sprintf("%s/%s", claim.Namespace, claim.Name)); err != nil {
 				log.Error(err, "Failed to release resource", "resource", resourceName)
 				// Continue anyway to release lease - don't block deletion
 			}

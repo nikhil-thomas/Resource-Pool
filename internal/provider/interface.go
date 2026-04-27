@@ -60,17 +60,16 @@ type ResourceProvider interface {
 	// Returns the Secret object containing credentials (username, password, keys, etc.)
 	GetCredentialSecret(ctx context.Context, namespace string, resource Resource) (*corev1.Secret, error)
 
-	// AcquireResource is called when a lease is acquired (optional setup)
-	// Can be used for pre-allocation tasks, logging, metrics, etc.
-	// The claimName parameter is the namespace/name of the ResourceClaim
-	// Return nil if no special setup is needed
-	AcquireResource(ctx context.Context, resource Resource, claimName string) error
+	// AcquireResource is called when a lease is acquired.
+	// Providers should perform per-claim setup here (e.g. creating an app user,
+	// rotating credentials) and return the name of the Kubernetes Secret that
+	// holds the credentials for the claim.  An empty string means "use the
+	// resource's default CredentialSecretName".
+	// The claimName parameter is "namespace/name" of the ResourceClaim.
+	AcquireResource(ctx context.Context, resource Resource, claimName string) (string, error)
 
-	// ReleaseResource is called during cleanup (when claim is deleted)
-	// Should reset resource state and rotate credentials
-	// This is where providers implement cleanup logic:
-	// - For Snowflake: drop temporary tables, rotate RSA key
-	// - For Postgres: drop temp schemas, rotate password
-	// - For AWS: cleanup resources, rotate access keys
-	ReleaseResource(ctx context.Context, namespace string, resource Resource) error
+	// ReleaseResource is called during cleanup (when claim is deleted).
+	// Should reset resource state, revoke app-user credentials, and rotate admin credentials.
+	// claimName is "namespace/name" of the ResourceClaim (same convention as AcquireResource).
+	ReleaseResource(ctx context.Context, namespace string, resource Resource, claimName string) error
 }
