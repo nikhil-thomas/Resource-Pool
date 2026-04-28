@@ -49,13 +49,16 @@ const (
 // Manager handles Kubernetes Lease operations for the resource pool
 type Manager struct {
 	client    client.Client
+	reader    client.Reader // direct API reader, used before cache starts
 	namespace string
 }
 
-// NewManager creates a new lease manager
-func NewManager(client client.Client, namespace string) *Manager {
+// NewManager creates a new lease manager.
+// reader should be mgr.GetAPIReader() — used for reads before the cache is started.
+func NewManager(c client.Client, reader client.Reader, namespace string) *Manager {
 	return &Manager{
-		client:    client,
+		client:    c,
+		reader:    reader,
 		namespace: namespace,
 	}
 }
@@ -259,6 +262,43 @@ func (m *Manager) ReleaseLease(ctx context.Context, leaseName string) error {
 	}
 
 	log.Info("Released lease", "lease", leaseName)
+	return nil
+}
+
+// ReleaseAllLeases clears the holder on every lease managed by this operator.
+// Called at startup to free leases that were held when the operator last stopped.
+// Leases that are already free are skipped.
+func (m *Manager) ReleaseAllLeases(ctx context.Context) error {
+	log := log.FromContext(ctx)
+
+	leaseList := &coordinationv1.LeaseList{}
+	labelSelector := labels.SelectorFromSet(map[string]string{
+		LabelManagedBy: ManagedByValue,
+	})
+
+	if err := m.reader.List(ctx, leaseList, &client.ListOptions{
+		Namespace:     m.namespace,
+		LabelSelector: labelSelector,
+	}); err != nil {
+		return fmt.Errorf("failed to list managed leases: %w", err)
+	}
+
+	for i := range leaseList.Items {
+		l := &leaseList.Items[i]
+		if l.Spec.HolderIdentity == nil {
+			continue // already free
+		}
+		holder := *l.Spec.HolderIdentity
+		l.Spec.HolderIdentity = nil
+		l.Spec.AcquireTime = nil
+		l.Spec.LeaseDurationSeconds = nil
+		if err := m.client.Update(ctx, l); err != nil {
+			log.Error(err, "Failed to release lease during startup cleanup", "lease", l.Name)
+			continue
+		}
+		log.Info("Released lease during startup cleanup", "lease", l.Name, "previousHolder", holder)
+	}
+
 	return nil
 }
 

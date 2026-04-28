@@ -72,4 +72,9 @@ type ResourceProvider interface {
 	// Should reset resource state, revoke app-user credentials, and rotate admin credentials.
 	// claimName is "namespace/name" of the ResourceClaim (same convention as AcquireResource).
 	ReleaseResource(ctx context.Context, namespace string, resource Resource, claimName string) error
+
+	// CleanupAllClaims is called at operator startup to release any per-claim state
+	// (app user credentials, secrets) left over from the previous run.
+	// Leases are released separately by the lease manager after this returns.
+	CleanupAllClaims(ctx context.Context, namespace string) error
 }

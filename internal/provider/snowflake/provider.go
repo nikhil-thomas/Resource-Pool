@@ -371,6 +371,83 @@ func (p *SnowflakeProvider) ReleaseResource(ctx context.Context, namespace strin
 	return nil
 }
 
+// CleanupAllClaims is called at operator startup to release any per-claim state
+// (Snowflake app user credentials, per-claim Secrets) left over from a previous run.
+// It connects as admin to every configured account, revokes configured roles from the
+// app user, and clears both RSA key slots.  It then deletes all per-claim Secrets
+// (those whose name begins with "sf-appuser-") found in the operator namespace.
+// Leases are released separately by the lease manager after this returns.
+func (p *SnowflakeProvider) CleanupAllClaims(ctx context.Context, namespace string) error {
+	log := log.FromContext(ctx)
+	log.Info("Running startup cleanup for Snowflake provider")
+
+	// Connect to each configured account as admin and clean up the app user.
+	for i := range p.config.Accounts {
+		account := &p.config.Accounts[i]
+
+		// Load admin credentials — use the direct API reader (cache not started yet)
+		adminSecret := &corev1.Secret{}
+		if err := p.reader.Get(ctx, client.ObjectKey{
+			Name:      account.CredentialSecretName,
+			Namespace: namespace,
+		}, adminSecret); err != nil {
+			log.Error(err, "Startup cleanup: failed to load admin secret, skipping account",
+				"account", account.Name, "secret", account.CredentialSecretName)
+			continue
+		}
+
+		adminUsername := string(adminSecret.Data["username"])
+		adminPrivateKey := adminSecret.Data["privateKey"]
+		if adminUsername == "" || len(adminPrivateKey) == 0 {
+			log.Error(nil, "Startup cleanup: admin secret missing credentials, skipping account",
+				"account", account.Name)
+			continue
+		}
+
+		adminClient, err := NewClient(ctx, ConnectionParams{
+			AccountURL: account.AccountURL,
+			Username:   adminUsername,
+			PrivateKey: adminPrivateKey,
+		})
+		if err != nil {
+			log.Error(err, "Startup cleanup: failed to connect to Snowflake, skipping account",
+				"account", account.Name)
+			continue
+		}
+
+		for _, role := range account.AppUserRoles {
+			adminClient.RevokeRole(ctx, role, appUser)
+		}
+		adminClient.ClearPublicKeys(ctx, appUser)
+		adminClient.Close()
+
+		log.Info("Startup cleanup: cleared app user on account", "account", account.Name)
+	}
+
+	// Delete all per-claim Secrets (name prefix "sf-appuser-") in the operator namespace.
+	// Use the direct API reader — cache not started yet.
+	secretList := &corev1.SecretList{}
+	if err := p.reader.List(ctx, secretList, client.InNamespace(namespace)); err != nil {
+		log.Error(err, "Startup cleanup: failed to list secrets")
+		return nil // non-fatal
+	}
+
+	for i := range secretList.Items {
+		s := &secretList.Items[i]
+		if !strings.HasPrefix(s.Name, "sf-appuser-") {
+			continue
+		}
+		if err := p.client.Delete(ctx, s); err != nil && !apierrors.IsNotFound(err) {
+			log.Error(err, "Startup cleanup: failed to delete app user secret", "secret", s.Name)
+		} else {
+			log.Info("Startup cleanup: deleted app user secret", "secret", s.Name)
+		}
+	}
+
+	log.Info("Startup cleanup complete for Snowflake provider")
+	return nil
+}
+
 // extractAccountIdentifier extracts account ID from URL
 // Example: "xy12345.us-east-1.snowflakecomputing.com" -> "xy12345"
 func extractAccountIdentifier(accountURL string) string {

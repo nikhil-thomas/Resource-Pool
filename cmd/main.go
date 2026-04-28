@@ -30,6 +30,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -204,7 +205,7 @@ func main() {
 	setupLog.Info("Registered providers", "providers", providerRegistry.List())
 
 	// Initialize each provider and create leases before starting the manager
-	leaseManager := lease.NewManager(mgr.GetClient(), namespace)
+	leaseManager := lease.NewManager(mgr.GetClient(), mgr.GetAPIReader(), namespace)
 	for _, providerName := range providerRegistry.List() {
 		prov, _ := providerRegistry.Get(providerName)
 
@@ -245,6 +246,49 @@ func main() {
 		setupLog.Error(err, "Failed to set up ready check")
 		os.Exit(1)
 	}
+
+	// Cleanup per-claim state (app user credentials, secrets) left from the previous run.
+	// This runs before mgr.Start so no reconciliation occurs until cleanup is complete.
+	setupLog.Info("Running startup cleanup for all providers")
+	for _, providerName := range providerRegistry.List() {
+		prov, _ := providerRegistry.Get(providerName)
+		if err := prov.CleanupAllClaims(ctx, namespace); err != nil {
+			setupLog.Error(err, "Startup cleanup failed (non-fatal)", "provider", providerName)
+		}
+	}
+	if err := leaseManager.ReleaseAllLeases(ctx); err != nil {
+		setupLog.Error(err, "Failed to release all leases during startup cleanup (non-fatal)")
+	}
+
+	// Reset status of any ResourceClaims that were Bound or Releasing when the operator stopped.
+	// The reconciler will re-process them and re-acquire leases as needed.
+	claimList := &poolv1alpha1.ResourceClaimList{}
+	if err := mgr.GetAPIReader().List(ctx, claimList); err != nil {
+		setupLog.Error(err, "Startup cleanup: failed to list ResourceClaims (non-fatal)")
+	} else {
+		for i := range claimList.Items {
+			claim := &claimList.Items[i]
+			if claim.Status.Phase != "Bound" && claim.Status.Phase != "Releasing" {
+				continue
+			}
+			claim.Status.Phase = "Pending"
+			claim.Status.LeaseName = ""
+			claim.Status.Message = "Operator restarted; re-acquiring resource"
+			claim.Status.AcquiredAt = nil
+			claim.Status.ExpiresAt = nil
+			claim.Status.ConnectionDetails = nil
+			claim.Status.CredentialSecretRef = nil
+			if err := mgr.GetClient().Status().Update(ctx, claim); err != nil {
+				setupLog.Error(err, "Startup cleanup: failed to reset claim status",
+					"claim", client.ObjectKeyFromObject(claim))
+			} else {
+				setupLog.Info("Startup cleanup: reset claim to Pending",
+					"claim", client.ObjectKeyFromObject(claim))
+			}
+		}
+	}
+
+	setupLog.Info("Startup cleanup complete")
 
 	setupLog.Info("Starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
