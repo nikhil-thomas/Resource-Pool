@@ -30,7 +30,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -247,24 +246,44 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Cleanup per-claim state (app user credentials, secrets) left from the previous run.
+	// Startup cleanup: release orphaned per-claim state from the previous run.
+	// Runs by default; set RESOURCE_POOL_STARTUP_CLEANUP=false to disable.
 	// This runs before mgr.Start so no reconciliation occurs until cleanup is complete.
-	setupLog.Info("Running startup cleanup for all providers")
-	for _, providerName := range providerRegistry.List() {
-		prov, _ := providerRegistry.Get(providerName)
-		if err := prov.CleanupAllClaims(ctx, namespace); err != nil {
-			setupLog.Error(err, "Startup cleanup failed (non-fatal)", "provider", providerName)
-		}
-	}
-	if err := leaseManager.ReleaseAllLeases(ctx); err != nil {
-		setupLog.Error(err, "Failed to release all leases during startup cleanup (non-fatal)")
+	if os.Getenv("RESOURCE_POOL_STARTUP_CLEANUP") != "false" {
+		runStartupCleanup(ctx, mgr, providerRegistry, leaseManager, namespace)
+	} else {
+		setupLog.Info("Startup cleanup skipped (RESOURCE_POOL_STARTUP_CLEANUP=false)")
 	}
 
-	// Reset status of any ResourceClaims that were Bound or Releasing when the operator stopped.
-	// The reconciler will re-process them and re-acquire leases as needed.
+	setupLog.Info("Starting manager")
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		setupLog.Error(err, "Failed to run manager")
+		os.Exit(1)
+	}
+}
+
+// runStartupCleanup releases any per-claim state left from a previous run:
+//  1. Provider-level cleanup (revoke Snowflake roles, clear RSA keys, delete sf-appuser-* Secrets)
+//  2. Release all held leases
+//  3. Reset Bound/Releasing ResourceClaims to Pending so the reconciler re-acquires them
+func runStartupCleanup(ctx context.Context, mgr ctrl.Manager, reg *provider.Registry, lm *lease.Manager, namespace string) {
+	log := ctrl.Log.WithName("startup-cleanup")
+	log.Info("Running startup cleanup for all providers")
+
+	for _, providerName := range reg.List() {
+		prov, _ := reg.Get(providerName)
+		if err := prov.CleanupAllClaims(ctx, namespace); err != nil {
+			log.Error(err, "Provider cleanup failed (non-fatal)", "provider", providerName)
+		}
+	}
+
+	if err := lm.ReleaseAllLeases(ctx); err != nil {
+		log.Error(err, "Failed to release all leases (non-fatal)")
+	}
+
 	claimList := &poolv1alpha1.ResourceClaimList{}
 	if err := mgr.GetAPIReader().List(ctx, claimList); err != nil {
-		setupLog.Error(err, "Startup cleanup: failed to list ResourceClaims (non-fatal)")
+		log.Error(err, "Failed to list ResourceClaims (non-fatal)")
 	} else {
 		for i := range claimList.Items {
 			claim := &claimList.Items[i]
@@ -279,20 +298,13 @@ func main() {
 			claim.Status.ConnectionDetails = nil
 			claim.Status.CredentialSecretRef = nil
 			if err := mgr.GetClient().Status().Update(ctx, claim); err != nil {
-				setupLog.Error(err, "Startup cleanup: failed to reset claim status",
-					"claim", client.ObjectKeyFromObject(claim))
+				log.Error(err, "Failed to reset claim status (non-fatal)",
+					"namespace", claim.Namespace, "name", claim.Name)
 			} else {
-				setupLog.Info("Startup cleanup: reset claim to Pending",
-					"claim", client.ObjectKeyFromObject(claim))
+				log.Info("Reset claim to Pending", "namespace", claim.Namespace, "name", claim.Name)
 			}
 		}
 	}
 
-	setupLog.Info("Startup cleanup complete")
-
-	setupLog.Info("Starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "Failed to run manager")
-		os.Exit(1)
-	}
+	log.Info("Startup cleanup complete")
 }
