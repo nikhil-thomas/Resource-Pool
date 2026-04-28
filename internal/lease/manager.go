@@ -19,6 +19,7 @@ package lease
 import (
 	"context"
 	"fmt"
+	"maps"
 	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -66,7 +67,7 @@ func NewManager(c client.Client, reader client.Reader, namespace string) *Manage
 // InitializeLeasesForProvider creates one Lease per resource for a given provider
 // This should be called once for each provider at operator startup
 func (m *Manager) InitializeLeasesForProvider(ctx context.Context, providerType string, resources []provider.Resource) error {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	for _, resource := range resources {
 		// Lease name format: resource-lease-<providerType>-<resourceName>
@@ -80,9 +81,7 @@ func (m *Manager) InitializeLeasesForProvider(ctx context.Context, providerType 
 		}
 
 		// Add all resource labels (for filtering)
-		for k, v := range resource.Labels {
-			leaseLabels[k] = v
-		}
+		maps.Copy(leaseLabels, resource.Labels)
 
 		lease := &coordinationv1.Lease{
 			ObjectMeta: metav1.ObjectMeta{
@@ -99,13 +98,13 @@ func (m *Manager) InitializeLeasesForProvider(ctx context.Context, providerType 
 		err := m.client.Create(ctx, lease)
 		if err != nil {
 			if client.IgnoreAlreadyExists(err) == nil {
-				log.V(1).Info("Lease already exists", "lease", leaseName)
+				logger.V(1).Info("Lease already exists", "lease", leaseName)
 				continue
 			}
 			return fmt.Errorf("failed to create lease %s: %w", leaseName, err)
 		}
 
-		log.Info("Created lease", "lease", leaseName, "provider", providerType, "resource", resource.Name)
+		logger.Info("Created lease", "lease", leaseName, "provider", providerType, "resource", resource.Name)
 	}
 
 	return nil
@@ -114,7 +113,7 @@ func (m *Manager) InitializeLeasesForProvider(ctx context.Context, providerType 
 // FindFreeLease finds the first available lease matching provider type and required labels
 // Returns the lease and the resource name, or error if none available
 func (m *Manager) FindFreeLease(ctx context.Context, providerType string, requiredLabels map[string]string) (*coordinationv1.Lease, string, error) {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	// Build label selector
 	// We always filter by managed-by and resource-type
@@ -135,7 +134,7 @@ func (m *Manager) FindFreeLease(ctx context.Context, providerType string, requir
 		return nil, "", fmt.Errorf("failed to list leases: %w", err)
 	}
 
-	log.V(1).Info("Found leases for provider", "provider", providerType, "count", len(leaseList.Items))
+	logger.V(1).Info("Found leases for provider", "provider", providerType, "count", len(leaseList.Items))
 
 	// Check each lease
 	for i := range leaseList.Items {
@@ -143,13 +142,13 @@ func (m *Manager) FindFreeLease(ctx context.Context, providerType string, requir
 
 		// Check if lease is free
 		if !m.isLeaseFree(lease) {
-			log.V(1).Info("Lease is busy", "lease", lease.Name, "holder", ptr.Deref(lease.Spec.HolderIdentity, ""))
+			logger.V(1).Info("Lease is busy", "lease", lease.Name, "holder", ptr.Deref(lease.Spec.HolderIdentity, ""))
 			continue
 		}
 
 		// Check if lease labels match required labels
 		if !matchesLabels(lease.Labels, requiredLabels) {
-			log.V(1).Info("Lease doesn't match required labels",
+			logger.V(1).Info("Lease doesn't match required labels",
 				"lease", lease.Name,
 				"required", requiredLabels,
 				"actual", lease.Labels)
@@ -158,7 +157,7 @@ func (m *Manager) FindFreeLease(ctx context.Context, providerType string, requir
 
 		// Found a matching free lease!
 		resourceName := lease.Labels[LabelResourceName]
-		log.Info("Found free lease", "lease", lease.Name, "resource", resourceName)
+		logger.Info("Found free lease", "lease", lease.Name, "resource", resourceName)
 		return lease, resourceName, nil
 	}
 
@@ -204,7 +203,7 @@ func matchesLabels(leaseLabels, requiredLabels map[string]string) bool {
 
 // AcquireLease locks a lease for a ResourceClaim
 func (m *Manager) AcquireLease(ctx context.Context, lease *coordinationv1.Lease, holderIdentity string, duration time.Duration) error {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	// Refresh lease to get latest version
 	fresh := &coordinationv1.Lease{}
@@ -230,7 +229,7 @@ func (m *Manager) AcquireLease(ctx context.Context, lease *coordinationv1.Lease,
 		return fmt.Errorf("failed to update lease: %w", err)
 	}
 
-	log.Info("Acquired lease",
+	logger.Info("Acquired lease",
 		"lease", fresh.Name,
 		"holder", holderIdentity,
 		"duration", duration.String())
@@ -240,7 +239,7 @@ func (m *Manager) AcquireLease(ctx context.Context, lease *coordinationv1.Lease,
 
 // ReleaseLease frees a lease (clears holder)
 func (m *Manager) ReleaseLease(ctx context.Context, leaseName string) error {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	lease := &coordinationv1.Lease{}
 	err := m.client.Get(ctx, client.ObjectKey{
@@ -261,7 +260,7 @@ func (m *Manager) ReleaseLease(ctx context.Context, leaseName string) error {
 		return fmt.Errorf("failed to update lease: %w", err)
 	}
 
-	log.Info("Released lease", "lease", leaseName)
+	logger.Info("Released lease", "lease", leaseName)
 	return nil
 }
 
@@ -269,7 +268,7 @@ func (m *Manager) ReleaseLease(ctx context.Context, leaseName string) error {
 // Called at startup to free leases that were held when the operator last stopped.
 // Leases that are already free are skipped.
 func (m *Manager) ReleaseAllLeases(ctx context.Context) error {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	leaseList := &coordinationv1.LeaseList{}
 	labelSelector := labels.SelectorFromSet(map[string]string{
@@ -293,10 +292,10 @@ func (m *Manager) ReleaseAllLeases(ctx context.Context) error {
 		l.Spec.AcquireTime = nil
 		l.Spec.LeaseDurationSeconds = nil
 		if err := m.client.Update(ctx, l); err != nil {
-			log.Error(err, "Failed to release lease during startup cleanup", "lease", l.Name)
+			logger.Error(err, "Failed to release lease during startup cleanup", "lease", l.Name)
 			continue
 		}
-		log.Info("Released lease during startup cleanup", "lease", l.Name, "previousHolder", holder)
+		logger.Info("Released lease during startup cleanup", "lease", l.Name, "previousHolder", holder)
 	}
 
 	return nil

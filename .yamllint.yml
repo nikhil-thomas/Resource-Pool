@@ -1,0 +1,26 @@
+extends: default
+
+rules:
+  line-length:
+    max: 160
+    level: warning
+  document-start: disable
+  comments: disable
+  indentation:
+    spaces: 2
+    indent-sequences: whatever
+    check-multi-line-strings: false
+  truthy:
+    allowed-values: ["true", "false", "on", "off", "yes", "no"]
+    check-keys: false
+  empty-lines:
+    max: 1
+    max-start: 0
+    max-end: 1
+
+ignore: |
+  vendor/
+  bin/
+  dist/
+  snowflake-secrets.yaml
+  config/crd/bases/

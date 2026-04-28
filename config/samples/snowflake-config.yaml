@@ -33,5 +33,3 @@ data:
         resetQueries:
           - "DROP TABLE IF EXISTS TEMP_TABLE_1"
           - "DROP TABLE IF EXISTS TEMP_TABLE_2"
-
-
