@@ -1,0 +1,36 @@
+name: PR Checks
+
+on:
+  pull_request:
+
+jobs:
+  golangci-lint:
+    name: Go lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Verify golangci-lint config
+        run: make lint-config
+
+      - name: Run golangci-lint
+        run: make lint
+
+  yaml-lint:
+    name: YAML lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Run yamllint
+        run: yamllint .

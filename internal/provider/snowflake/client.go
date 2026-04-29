@@ -23,7 +23,7 @@ import (
 	"strings"
 
 	sf "github.com/snowflakedb/gosnowflake"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Client wraps Snowflake database connection
@@ -45,7 +45,7 @@ type ConnectionParams struct {
 
 // NewClient creates a new Snowflake client
 func NewClient(ctx context.Context, params ConnectionParams) (*Client, error) {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	// Parse private key
 	privateKey, err := ParsePrivateKey(params.PrivateKey)
@@ -81,7 +81,7 @@ func NewClient(ctx context.Context, params ConnectionParams) (*Client, error) {
 
 	// Test connection
 	if err := db.PingContext(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping Snowflake: %w", err)
 	}
 
@@ -115,7 +115,7 @@ func extractAccountFromURL(accountURL string) string {
 // ResetState cleans up the Snowflake environment
 // Executes custom reset queries defined in account configuration
 func (c *Client) ResetState(ctx context.Context, resetQueries []string) error {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	if len(resetQueries) == 0 {
 		log.Info("No reset queries configured, skipping reset")
@@ -143,7 +143,7 @@ func (c *Client) ResetState(ctx context.Context, resetQueries []string) error {
 
 // RotateCredentials updates the RSA public key for the user
 func (c *Client) RotateCredentials(ctx context.Context, newPublicKey string) error {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	log.Info("Rotating credentials for user", "username", c.username)
 
@@ -163,7 +163,7 @@ func (c *Client) RotateCredentials(ctx context.Context, newPublicKey string) err
 
 // EnsureUser creates the Snowflake user if it does not already exist.
 func (c *Client) EnsureUser(ctx context.Context, username, role, warehouse string) error {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 	log.Info("Ensuring Snowflake user exists", "username", username)
 
 	query := fmt.Sprintf(
@@ -180,7 +180,7 @@ func (c *Client) EnsureUser(ctx context.Context, username, role, warehouse strin
 
 // SetPublicKey sets RSA_PUBLIC_KEY (slot 1) for the given user and clears slot 2.
 func (c *Client) SetPublicKey(ctx context.Context, username, publicKey string) error {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 	log.Info("Setting public key for user", "username", username)
 
 	setKey := fmt.Sprintf("ALTER USER %s SET RSA_PUBLIC_KEY='%s'", username, publicKey)
@@ -200,7 +200,7 @@ func (c *Client) SetPublicKey(ctx context.Context, username, publicKey string) e
 
 // GrantRole grants a Snowflake role to the given user.
 func (c *Client) GrantRole(ctx context.Context, role, username string) error {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 	log.Info("Granting role to user", "role", role, "username", username)
 
 	query := fmt.Sprintf("GRANT ROLE %s TO USER %s", role, username)
@@ -215,7 +215,7 @@ func (c *Client) GrantRole(ctx context.Context, role, username string) error {
 // RevokeRole revokes a Snowflake role from the given user.
 // Non-fatal if the role is not currently granted — error is logged only.
 func (c *Client) RevokeRole(ctx context.Context, role, username string) {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 	log.Info("Revoking role from user", "role", role, "username", username)
 
 	query := fmt.Sprintf("REVOKE ROLE %s FROM USER %s", role, username)
@@ -231,7 +231,7 @@ func (c *Client) RevokeRole(ctx context.Context, role, username string) {
 // Both operations are best-effort; errors are logged but not returned since
 // slots may already be empty.
 func (c *Client) ClearPublicKeys(ctx context.Context, username string) {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 	log.Info("Clearing RSA public keys for user", "username", username)
 
 	for _, stmt := range []string{

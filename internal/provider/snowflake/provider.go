@@ -26,7 +26,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/nikhil-thomas/Resource-Pool/internal/provider"
 )
@@ -63,7 +63,7 @@ func (p *SnowflakeProvider) Name() string {
 
 // Initialize loads configuration and returns list of managed resources
 func (p *SnowflakeProvider) Initialize(ctx context.Context, namespace string) ([]provider.Resource, error) {
-	log := log.FromContext(ctx)
+	logger := logf.FromContext(ctx)
 	p.namespace = namespace
 
 	// Load configuration from ConfigMap using the direct API reader (bypasses cache).
@@ -123,7 +123,7 @@ func (p *SnowflakeProvider) Initialize(ctx context.Context, namespace string) ([
 		})
 	}
 
-	log.Info("Snowflake provider initialized", "accountCount", len(resources))
+	logger.Info("Snowflake provider initialized", "accountCount", len(resources))
 	return resources, nil
 }
 
@@ -173,8 +173,8 @@ const appUser = "test_runner_appuser"
 // AcquireResource creates the app user in Snowflake, generates a fresh key pair,
 // stores the private key in a per-claim Secret, and returns the Secret name.
 func (p *SnowflakeProvider) AcquireResource(ctx context.Context, resource provider.Resource, claimName string) (string, error) {
-	log := log.FromContext(ctx)
-	log.Info("Acquiring Snowflake resource", "resource", resource.Name, "claim", claimName)
+	logger := logf.FromContext(ctx)
+	logger.Info("Acquiring Snowflake resource", "resource", resource.Name, "claim", claimName)
 
 	// Find account config
 	var account *SnowflakeAccount
@@ -215,7 +215,7 @@ func (p *SnowflakeProvider) AcquireResource(ctx context.Context, resource provid
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Snowflake: %w", err)
 	}
-	defer sfClient.Close()
+	defer func() { _ = sfClient.Close() }()
 
 	// Ensure the app user exists
 	if err := sfClient.EnsureUser(ctx, appUser, account.Role, account.Warehouse); err != nil {
@@ -271,7 +271,7 @@ func (p *SnowflakeProvider) AcquireResource(ctx context.Context, resource provid
 		}
 	}
 
-	log.Info("App user ready and secret stored", "user", appUser, "secret", secretName)
+	logger.Info("App user ready and secret stored", "user", appUser, "secret", secretName)
 	return secretName, nil
 }
 
@@ -283,7 +283,7 @@ func (p *SnowflakeProvider) AcquireResource(ctx context.Context, resource provid
 // The bootstrap admin secret is never modified — it holds long-lived service
 // account credentials that must remain stable across all acquire/release cycles.
 func (p *SnowflakeProvider) ReleaseResource(ctx context.Context, namespace string, resource provider.Resource, claimName string) error {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 	log.Info("Releasing Snowflake resource", "resource", resource.Name, "claim", claimName)
 
 	// Find account config
@@ -320,7 +320,7 @@ func (p *SnowflakeProvider) ReleaseResource(ctx context.Context, namespace strin
 	if err != nil {
 		return fmt.Errorf("failed to connect to Snowflake as admin: %w", err)
 	}
-	defer adminClient.Close()
+	defer func() { _ = adminClient.Close() }()
 
 	// Step 1: Run reset queries as the app user (best-effort)
 	appUserSecretName := "sf-appuser-" + strings.ReplaceAll(claimName, "/", "-")
@@ -347,7 +347,9 @@ func (p *SnowflakeProvider) ReleaseResource(ctx context.Context, namespace strin
 				if resetErr := appClient.ResetState(ctx, account.ResetQueries); resetErr != nil {
 					log.Error(resetErr, "Failed to reset Snowflake state", "resource", resource.Name)
 				}
-				appClient.Close()
+				if closeErr := appClient.Close(); closeErr != nil {
+					log.Error(closeErr, "Failed to close app client")
+				}
 			}
 		}
 	}
@@ -378,7 +380,7 @@ func (p *SnowflakeProvider) ReleaseResource(ctx context.Context, namespace strin
 // (those whose name begins with "sf-appuser-") found in the operator namespace.
 // Leases are released separately by the lease manager after this returns.
 func (p *SnowflakeProvider) CleanupAllClaims(ctx context.Context, namespace string) error {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 	log.Info("Running startup cleanup for Snowflake provider")
 
 	// Connect to each configured account as admin and clean up the app user.
@@ -419,7 +421,9 @@ func (p *SnowflakeProvider) CleanupAllClaims(ctx context.Context, namespace stri
 			adminClient.RevokeRole(ctx, role, appUser)
 		}
 		adminClient.ClearPublicKeys(ctx, appUser)
-		adminClient.Close()
+		if closeErr := adminClient.Close(); closeErr != nil {
+			log.Error(closeErr, "Startup cleanup: failed to close admin client", "account", account.Name)
+		}
 
 		log.Info("Startup cleanup: cleared app user on account", "account", account.Name)
 	}

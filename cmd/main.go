@@ -266,7 +266,9 @@ func main() {
 //  1. Provider-level cleanup (revoke Snowflake roles, clear RSA keys, delete sf-appuser-* Secrets)
 //  2. Release all held leases
 //  3. Reset Bound/Releasing ResourceClaims to Pending so the reconciler re-acquires them
-func runStartupCleanup(ctx context.Context, mgr ctrl.Manager, reg *provider.Registry, lm *lease.Manager, namespace string) {
+func runStartupCleanup(
+	ctx context.Context, mgr ctrl.Manager, reg *provider.Registry, lm *lease.Manager, namespace string,
+) {
 	log := ctrl.Log.WithName("startup-cleanup")
 	log.Info("Running startup cleanup for all providers")
 
@@ -287,7 +289,7 @@ func runStartupCleanup(ctx context.Context, mgr ctrl.Manager, reg *provider.Regi
 	} else {
 		for i := range claimList.Items {
 			claim := &claimList.Items[i]
-			if claim.Status.Phase != "Bound" && claim.Status.Phase != "Releasing" {
+			if claim.Status.Phase != "Bound" && claim.Status.Phase != "Releasing" { //nolint:goconst
 				continue
 			}
 			claim.Status.Phase = "Pending"
