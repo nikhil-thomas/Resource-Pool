@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	poolv1alpha1 "github.com/nikhil-thomas/Resource-Pool/api/v1alpha1"
+	"github.com/nikhil-thomas/Resource-Pool/internal/provider"
 )
 
 var _ = Describe("ResourceClaim Controller", func() {
@@ -51,16 +52,20 @@ var _ = Describe("ResourceClaim Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: poolv1alpha1.ResourceClaimSpec{
+						Type: "snowflake",
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &poolv1alpha1.ResourceClaim{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			if errors.IsNotFound(err) {
+				return
+			}
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Cleanup the specific resource instance ResourceClaim")
@@ -69,8 +74,9 @@ var _ = Describe("ResourceClaim Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &ResourceClaimReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:           k8sClient,
+				Scheme:           k8sClient.Scheme(),
+				ProviderRegistry: provider.NewRegistry(),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

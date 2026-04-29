@@ -33,10 +33,20 @@ import (
 
 var (
 	// managerImage is the manager image to be built and loaded for testing.
-	managerImage = "example.com/resource-pool:v0.0.1"
+	// Override with MANAGER_IMAGE env var (e.g. MANAGER_IMAGE=nikhilvep/resource-pool:test-pr-42).
+	managerImage = getManagerImage()
 	// shouldCleanupCertManager tracks whether CertManager was installed by this suite.
 	shouldCleanupCertManager = false
 )
+
+// getManagerImage returns the image to use for tests.
+// If MANAGER_IMAGE is set, that value is used. Otherwise falls back to a local default.
+func getManagerImage() string {
+	if img := os.Getenv("MANAGER_IMAGE"); img != "" {
+		return img
+	}
+	return "resource-pool:e2e"
+}
 
 // TestE2E runs the e2e test suite to validate the solution in an isolated environment.
 // The default setup requires Kind and CertManager.
