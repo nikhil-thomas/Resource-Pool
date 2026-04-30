@@ -63,7 +63,7 @@ type ResourceClaimReconciler struct {
 // +kubebuilder:rbac:groups=pool.dataverse.redhat.com,resources=resourceclaims/finalizers,verbs=update
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop
 func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -119,20 +119,44 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// If already bound, check if lease is still valid
+	// If already bound, check if the lease has expired
 	if claim.Status.Phase == phaseBound {
-		// Already bound, return (no-op)
-		// TODO: Optionally implement lease renewal logic here
+		if claim.Status.ExpiresAt != nil && time.Now().After(claim.Status.ExpiresAt.Time) {
+			// Lease has expired — delete the CR. The finalizer path (handleDeletion)
+			// will handle ReleaseResource + ReleaseLease + finalizer removal.
+			// One-shot borrow semantics: the claim is not re-queued for re-acquisition.
+			log.Info("Lease expired, deleting claim", "claim", claim.Name, "expiredAt", claim.Status.ExpiresAt)
+			if err := r.Delete(ctx, claim); err != nil {
+				if !errors.IsNotFound(err) {
+					log.Error(err, "Failed to delete expired claim")
+					return ctrl.Result{RequeueAfter: requeueAfterError}, nil
+				}
+			}
+			return ctrl.Result{}, nil
+		}
+		// Lease still valid — requeue just before it expires so we catch expiry promptly
+		if claim.Status.ExpiresAt != nil {
+			remaining := time.Until(claim.Status.ExpiresAt.Time)
+			if remaining > 0 {
+				return ctrl.Result{RequeueAfter: remaining}, nil
+			}
+		}
 		return ctrl.Result{}, nil
 	}
 
 	// Try to acquire a lease
 	log.Info("Attempting to acquire lease for claim", "type", claim.Spec.Type)
+	return r.acquireLease(ctx, claim, prov)
+}
+
+// acquireLease finds a free lease, provisions the resource, and updates the claim status to Bound.
+func (r *ResourceClaimReconciler) acquireLease(ctx context.Context, claim *poolv1alpha1.ResourceClaim, prov provider.ResourceProvider) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
 
 	leaseLease, resourceName, err := r.LeaseManager.FindFreeLease(ctx, claim.Spec.Type, claim.Spec.RequiredLabels)
 	if err != nil {
 		// No free leases available
-		claim.Status.Phase = "Pending"
+		claim.Status.Phase = phasePending
 		claim.Status.Message = fmt.Sprintf("Waiting for available resource: %v", err)
 
 		if updateErr := r.Status().Update(ctx, claim); updateErr != nil {
@@ -216,7 +240,7 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	now := metav1.Now()
 	expiresAt := metav1.NewTime(now.Add(duration))
 
-	claim.Status.Phase = "Bound"
+	claim.Status.Phase = phaseBound
 	claim.Status.LeaseName = leaseLease.Name
 	claim.Status.AcquiredAt = &now
 	claim.Status.ExpiresAt = &expiresAt
