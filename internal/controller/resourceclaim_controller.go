@@ -122,83 +122,41 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// If already bound, check if the lease has expired
 	if claim.Status.Phase == phaseBound {
 		if claim.Status.ExpiresAt != nil && time.Now().After(claim.Status.ExpiresAt.Time) {
-			// Lease has expired — run cleanup via the deletion path.
-			// Set DeletionTimestamp equivalent by calling handleDeletion directly,
-			// but since the claim is not being deleted by the user we instead transition
-			// to Releasing and clean up the provider state and the lease ourselves.
-			log.Info("Lease has expired, releasing claim", "claim", claim.Name, "expiredAt", claim.Status.ExpiresAt)
-
-			if claim.Status.LeaseName != "" {
-				resourceName := ""
-				parts := len(lease.LeasePrefix) + len(claim.Spec.Type) + 1
-				if len(claim.Status.LeaseName) > parts {
-					resourceName = claim.Status.LeaseName[parts:]
-				}
-				if resourceName != "" {
-					resource := r.ProviderRegistry.GetResource(claim.Spec.Type, resourceName)
-					if resource != nil {
-						if err := prov.ReleaseResource(ctx, r.Namespace, *resource, fmt.Sprintf("%s/%s", claim.Namespace, claim.Name)); err != nil {
-							log.Error(err, "Failed to release expired resource", "resource", resourceName)
-						}
-					}
-				}
-				if err := r.LeaseManager.ReleaseLease(ctx, claim.Status.LeaseName); err != nil {
-					log.Error(err, "Failed to release expired lease")
+			// Lease has expired — delete the CR. The finalizer path (handleDeletion)
+			// will handle ReleaseResource + ReleaseLease + finalizer removal.
+			// One-shot borrow semantics: the claim is not re-queued for re-acquisition.
+			log.Info("Lease expired, deleting claim", "claim", claim.Name, "expiredAt", claim.Status.ExpiresAt)
+			if err := r.Delete(ctx, claim); err != nil {
+				if !errors.IsNotFound(err) {
+					log.Error(err, "Failed to delete expired claim")
 					return ctrl.Result{RequeueAfter: requeueAfterError}, nil
-				}
-			}
-
-			claim.Status.Phase = phasePending
-			claim.Status.LeaseName = ""
-			claim.Status.AcquiredAt = nil
-			claim.Status.ExpiresAt = nil
-			claim.Status.ConnectionDetails = nil
-			claim.Status.CredentialSecretRef = nil
-			claim.Status.Message = "Lease expired, waiting for available resource"
-			setCondition(&claim.Status, metav1.Condition{
-				Type:               "Ready",
-				Status:             metav1.ConditionFalse,
-				ObservedGeneration: claim.Generation,
-				Reason:             "LeaseExpired",
-				Message:            "Lease expired, claim is pending re-assignment",
-			})
-			if err := r.Status().Update(ctx, claim); err != nil {
-				log.Error(err, "Failed to update status after lease expiry")
-				return ctrl.Result{}, err
-			}
-			// Check whether other claims of the same type are already pending.
-			// If so, yield to them — requeue after requeueAfterPending so they
-			// get processed first. Only attempt immediate re-acquisition when
-			// this is the only claim waiting.
-			otherPending, checkErr := r.hasPendingClaimsOfType(ctx, claim.Spec.Type, claim.Name)
-			if checkErr != nil {
-				log.Error(checkErr, "Failed to check pending claims, will retry normally")
-			}
-			if otherPending {
-				log.Info("Other claims are pending, yielding re-acquisition",
-					"claim", claim.Name, "requeueAfter", requeueAfterPending)
-				return ctrl.Result{RequeueAfter: requeueAfterPending}, nil
-			}
-			// No other waiters — fall through and re-acquire immediately.
-		} else {
-			// Lease still valid — requeue just before it expires so we catch expiry promptly
-			if claim.Status.ExpiresAt != nil {
-				remaining := time.Until(claim.Status.ExpiresAt.Time)
-				if remaining > 0 {
-					return ctrl.Result{RequeueAfter: remaining}, nil
 				}
 			}
 			return ctrl.Result{}, nil
 		}
+		// Lease still valid — requeue just before it expires so we catch expiry promptly
+		if claim.Status.ExpiresAt != nil {
+			remaining := time.Until(claim.Status.ExpiresAt.Time)
+			if remaining > 0 {
+				return ctrl.Result{RequeueAfter: remaining}, nil
+			}
+		}
+		return ctrl.Result{}, nil
 	}
 
 	// Try to acquire a lease
 	log.Info("Attempting to acquire lease for claim", "type", claim.Spec.Type)
+	return r.acquireLease(ctx, claim, prov)
+}
+
+// acquireLease finds a free lease, provisions the resource, and updates the claim status to Bound.
+func (r *ResourceClaimReconciler) acquireLease(ctx context.Context, claim *poolv1alpha1.ResourceClaim, prov provider.ResourceProvider) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
 
 	leaseLease, resourceName, err := r.LeaseManager.FindFreeLease(ctx, claim.Spec.Type, claim.Spec.RequiredLabels)
 	if err != nil {
 		// No free leases available
-		claim.Status.Phase = "Pending"
+		claim.Status.Phase = phasePending
 		claim.Status.Message = fmt.Sprintf("Waiting for available resource: %v", err)
 
 		if updateErr := r.Status().Update(ctx, claim); updateErr != nil {
@@ -282,7 +240,7 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	now := metav1.Now()
 	expiresAt := metav1.NewTime(now.Add(duration))
 
-	claim.Status.Phase = "Bound"
+	claim.Status.Phase = phaseBound
 	claim.Status.LeaseName = leaseLease.Name
 	claim.Status.AcquiredAt = &now
 	claim.Status.ExpiresAt = &expiresAt
@@ -319,24 +277,6 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		"expiresAt", expiresAt.Format(time.RFC3339))
 
 	return ctrl.Result{}, nil
-}
-
-// hasPendingClaimsOfType returns true if any ResourceClaim other than the given one
-// is currently in Pending phase for the specified provider type.
-func (r *ResourceClaimReconciler) hasPendingClaimsOfType(ctx context.Context, providerType, excludeName string) (bool, error) {
-	claimList := &poolv1alpha1.ResourceClaimList{}
-	if err := r.List(ctx, claimList); err != nil {
-		return false, fmt.Errorf("failed to list resource claims: %w", err)
-	}
-	for _, c := range claimList.Items {
-		if c.Name == excludeName {
-			continue
-		}
-		if c.Spec.Type == providerType && c.Status.Phase == phasePending {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // handleDeletion handles cleanup when ResourceClaim is deleted
