@@ -1,12 +1,12 @@
 apiVersion: pool.dataverse.redhat.com/v1alpha1
-kind: ResourceClaim
+kind: ResourceBid
 metadata:
   labels:
     app.kubernetes.io/name: resource-pool
     app.kubernetes.io/managed-by: kustomize
-  name: resourceclaim-sample
+  name: resourcebid-sample
 spec:
-  # Type of resource to claim (e.g., "snowflake", "postgres", "aws-account")
+  # Type of resource to bid for (e.g., "snowflake", "postgres", "aws-account")
   type: snowflake
 
   # How long to hold the resource (optional, defaults to 1h)

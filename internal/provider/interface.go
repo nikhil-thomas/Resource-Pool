@@ -43,7 +43,7 @@ type Resource struct {
 // Each provider (snowflake, postgres, aws-account, etc.) implements this interface
 type ResourceProvider interface {
 	// Name returns the provider type name (e.g., "snowflake", "postgres")
-	// This is used in ResourceClaim.Spec.Type to select the provider
+	// This is used in ResourceBid.Spec.Type to select the provider
 	Name() string
 
 	// Initialize is called once at operator startup
@@ -52,7 +52,7 @@ type ResourceProvider interface {
 	Initialize(ctx context.Context, namespace string) ([]Resource, error)
 
 	// GetConnectionDetails returns connection information for a resource
-	// This is what gets populated in ResourceClaim.Status.ConnectionDetails
+	// This is what gets populated in ResourceBid.Status.ConnectionDetails
 	// The returned map is provider-specific (e.g., for Snowflake: accountUrl, warehouse, etc.)
 	GetConnectionDetails(ctx context.Context, resource Resource) (map[string]string, error)
 
@@ -61,17 +61,17 @@ type ResourceProvider interface {
 	GetCredentialSecret(ctx context.Context, namespace string, resource Resource) (*corev1.Secret, error)
 
 	// AcquireResource is called when a lease is acquired.
-	// Providers should perform per-claim setup here (e.g. creating an app user,
+	// Providers should perform per-bid setup here (e.g. creating an app user,
 	// rotating credentials) and return the name of the Kubernetes Secret that
-	// holds the credentials for the claim.  An empty string means "use the
+	// holds the credentials for the bid.  An empty string means "use the
 	// resource's default CredentialSecretName".
-	// The claimName parameter is "namespace/name" of the ResourceClaim.
-	AcquireResource(ctx context.Context, resource Resource, claimName string) (string, error)
+	// The bidName parameter is "namespace/name" of the ResourceBid.
+	AcquireResource(ctx context.Context, resource Resource, bidName string) (string, error)
 
-	// ReleaseResource is called during cleanup (when claim is deleted).
+	// ReleaseResource is called during cleanup (when bid is deleted).
 	// Should reset resource state, revoke app-user credentials, and rotate admin credentials.
-	// claimName is "namespace/name" of the ResourceClaim (same convention as AcquireResource).
-	ReleaseResource(ctx context.Context, namespace string, resource Resource, claimName string) error
+	// bidName is "namespace/name" of the ResourceBid (same convention as AcquireResource).
+	ReleaseResource(ctx context.Context, namespace string, resource Resource, bidName string) error
 
 	// CleanupAllClaims is called at operator startup to release any per-claim state
 	// (app user credentials, secrets) left over from the previous run.

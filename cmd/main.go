@@ -225,14 +225,14 @@ func main() {
 	}
 
 	// Setup controller with provider registry and lease manager
-	if err := (&controller.ResourceClaimReconciler{
+	if err := (&controller.ResourceBidReconciler{
 		Client:           mgr.GetClient(),
 		Scheme:           mgr.GetScheme(),
 		LeaseManager:     leaseManager,
 		ProviderRegistry: providerRegistry,
 		Namespace:        namespace,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "ResourceClaim")
+		setupLog.Error(err, "Failed to create controller", "controller", "ResourceBid")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
@@ -265,7 +265,7 @@ func main() {
 // runStartupCleanup releases any per-claim state left from a previous run:
 //  1. Provider-level cleanup (revoke Snowflake roles, clear RSA keys, delete sf-appuser-* Secrets)
 //  2. Release all held leases
-//  3. Reset Bound/Releasing ResourceClaims to Pending so the reconciler re-acquires them
+//  3. Reset Bound/Releasing ResourceBids to Pending so the reconciler re-acquires them
 func runStartupCleanup(
 	ctx context.Context, mgr ctrl.Manager, reg *provider.Registry, lm *lease.Manager, namespace string,
 ) {
@@ -283,27 +283,27 @@ func runStartupCleanup(
 		log.Error(err, "Failed to release all leases (non-fatal)")
 	}
 
-	claimList := &poolv1alpha1.ResourceClaimList{}
-	if err := mgr.GetAPIReader().List(ctx, claimList); err != nil {
-		log.Error(err, "Failed to list ResourceClaims (non-fatal)")
+	bidList := &poolv1alpha1.ResourceBidList{}
+	if err := mgr.GetAPIReader().List(ctx, bidList); err != nil {
+		log.Error(err, "Failed to list ResourceBids (non-fatal)")
 	} else {
-		for i := range claimList.Items {
-			claim := &claimList.Items[i]
-			if claim.Status.Phase != "Bound" && claim.Status.Phase != "Releasing" { //nolint:goconst
+		for i := range bidList.Items {
+			bid := &bidList.Items[i]
+			if bid.Status.Phase != "Bound" && bid.Status.Phase != "Releasing" { //nolint:goconst
 				continue
 			}
-			claim.Status.Phase = "Pending"
-			claim.Status.LeaseName = ""
-			claim.Status.Message = "Operator restarted; re-acquiring resource"
-			claim.Status.AcquiredAt = nil
-			claim.Status.ExpiresAt = nil
-			claim.Status.ConnectionDetails = nil
-			claim.Status.CredentialSecretRef = nil
-			if err := mgr.GetClient().Status().Update(ctx, claim); err != nil {
-				log.Error(err, "Failed to reset claim status (non-fatal)",
-					"namespace", claim.Namespace, "name", claim.Name)
+			bid.Status.Phase = "Pending"
+			bid.Status.LeaseName = ""
+			bid.Status.Message = "Operator restarted; re-acquiring resource"
+			bid.Status.AcquiredAt = nil
+			bid.Status.ExpiresAt = nil
+			bid.Status.ConnectionDetails = nil
+			bid.Status.CredentialSecretRef = nil
+			if err := mgr.GetClient().Status().Update(ctx, bid); err != nil {
+				log.Error(err, "Failed to reset bid status (non-fatal)",
+					"namespace", bid.Namespace, "name", bid.Name)
 			} else {
-				log.Info("Reset claim to Pending", "namespace", claim.Namespace, "name", claim.Name)
+				log.Info("Reset bid to Pending", "namespace", bid.Namespace, "name", bid.Name)
 			}
 		}
 	}

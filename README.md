@@ -4,14 +4,14 @@ A Kubernetes operator for managing a pool of Snowflake test clusters using Kuber
 
 ## Overview
 
-This operator enables teams to share a limited pool of Snowflake test accounts across multiple CI/CD pipelines without conflicts. Users create a `ResourceClaim` custom resource, and the operator automatically assigns a free Snowflake account, providing connection details. When the claim is deleted, the operator resets the Snowflake state, rotates credentials, and releases the resource back to the pool.
+This operator enables teams to share a limited pool of Snowflake test accounts across multiple CI/CD pipelines without conflicts. Users create a `ResourceBid` custom resource, and the operator automatically assigns a free Snowflake account, providing connection details. When the bid is deleted, the operator resets the Snowflake state, rotates credentials, and releases the resource back to the pool.
 
 ## Key Features
 
 - **Lease-based coordination**: Uses Kubernetes Leases for distributed locking
 - **Automatic cleanup**: Finalizers ensure Snowflake state is reset even on force-delete
 - **Credential rotation**: Automatically rotates RSA keys when resources are released
-- **Label-based filtering**: Route claims to specific account tiers/regions
+- **Label-based filtering**: Route bids to specific account tiers/regions
 - **GitLab CI/CD friendly**: Easy integration with test pipelines
 
 ## Quick Start
@@ -31,8 +31,8 @@ See [IMPLEMENTATION.md](./IMPLEMENTATION.md) for the complete step-by-step imple
 # Initialize the project
 kubebuilder init --domain snowflake.io --repo github.com/nikhil-thomas/Resource-Pool
 
-# Create the ResourceClaim CRD
-kubebuilder create api --group pool --version v1alpha1 --kind ResourceClaim --resource --controller
+# Create the ResourceBid CRD
+kubebuilder create api --group pool --version v1alpha1 --kind ResourceBid --resource --controller
 
 # Generate manifests
 make manifests
@@ -63,11 +63,11 @@ data:
 
 2. **Create credential secrets** for each account
 
-3. **Claim a resource**:
+3. **Bid for a resource**:
 
 ```yaml
 apiVersion: pool.snowflake.io/v1alpha1
-kind: ResourceClaim
+kind: ResourceBid
 metadata:
   name: my-test
 spec:
@@ -79,20 +79,20 @@ spec:
 4. **Get connection details**:
 
 ```bash
-kubectl get resourceclaim my-test -o jsonpath='{.status.connectionDetails}'
+kubectl get resourcebid my-test -o jsonpath='{.status.connectionDetails}'
 ```
 
 5. **Release when done**:
 
 ```bash
-kubectl delete resourceclaim my-test
+kubectl delete resourcebid my-test
 ```
 
 ## Architecture
 
 ```
 ┌─────────────┐
-│ResourceClaim│──────┐
+│ ResourceBid │──────┐
 └─────────────┘      │
                      ▼
              ┌───────────────┐      ┌────────┐
@@ -121,7 +121,7 @@ kubectl delete resourceclaim my-test
 ```
 Resource-Pool/
 ├── api/v1alpha1/              # CRD definitions
-│   └── resourceclaim_types.go
+│   └── resourcebid_types.go
 ├── internal/
 │   ├── controller/            # Reconciliation logic
 │   ├── config/               # Configuration loading

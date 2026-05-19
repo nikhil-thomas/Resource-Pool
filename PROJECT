@@ -15,7 +15,7 @@ resources:
   controller: true
   domain: dataverse.redhat.com
   group: pool
-  kind: ResourceClaim
+  kind: ResourceBid
   path: github.com/nikhil-thomas/Resource-Pool/api/v1alpha1
   version: v1alpha1
 version: "3"

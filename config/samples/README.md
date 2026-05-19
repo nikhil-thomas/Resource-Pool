@@ -38,15 +38,15 @@ Apply the secrets:
 kubectl apply -f snowflake-secrets.yaml
 ```
 
-### 3. Create a ResourceClaim
+### 3. Create a ResourceBid
 
-Use `resourceclaim-snowflake.yaml` as a template:
+Use `resourcebid-snowflake.yaml` as a template:
 
 ```yaml
 apiVersion: pool.dataverse.redhat.com/v1alpha1
-kind: ResourceClaim
+kind: ResourceBid
 metadata:
-  name: my-snowflake-claim
+  name: my-snowflake-bid
 spec:
   type: snowflake
   leaseDuration: 2h
@@ -55,23 +55,23 @@ spec:
     region: us-east-1
 ```
 
-Apply the claim:
+Apply the bid:
 ```bash
-kubectl apply -f resourceclaim-snowflake.yaml
+kubectl apply -f resourcebid-snowflake.yaml
 ```
 
-### 4. Check Claim Status
+### 4. Check Bid Status
 
 ```bash
-# View all claims
-kubectl get resourceclaims
-kubectl get rc  # short form
+# View all bids
+kubectl get resourcebids
+kubectl get rb  # short form
 
 # View detailed status
-kubectl get resourceclaim my-snowflake-claim -o yaml
+kubectl get resourcebid my-snowflake-bid -o yaml
 
 # Check connection details
-kubectl get resourceclaim my-snowflake-claim -o jsonpath='{.status.connectionDetails}'
+kubectl get resourcebid my-snowflake-bid -o jsonpath='{.status.connectionDetails}'
 
 # Check leases
 kubectl get leases -l pool.dataverse.redhat.com/resource-type=snowflake
@@ -79,11 +79,11 @@ kubectl get leases -l pool.dataverse.redhat.com/resource-type=snowflake
 
 ### 5. Use the Resource
 
-Once the claim is in `Bound` phase, you can use the connection details:
+Once the bid is in `Bound` phase, you can use the connection details:
 
 ```bash
 # Get connection details
-kubectl get resourceclaim my-snowflake-claim -o yaml
+kubectl get resourcebid my-snowflake-bid -o yaml
 
 # Example output:
 # status:
@@ -102,16 +102,16 @@ Use these details in your CI/CD pipeline or test scripts to connect to the Snowf
 
 ### 6. Clean Up
 
-Delete the claim to release the resource:
+Delete the bid to release the resource:
 
 ```bash
-kubectl delete resourceclaim my-snowflake-claim
+kubectl delete resourcebid my-snowflake-bid
 ```
 
 The operator will automatically:
 - Execute reset queries to clean up test data
 - Rotate the credentials
-- Release the lease for the next claim
+- Release the lease for the next bid
 
 ## Adding New Provider Types
 
@@ -121,6 +121,6 @@ To add support for a new resource type (e.g., PostgreSQL, AWS accounts):
 2. Register the provider in `cmd/main.go`
 3. Create a ConfigMap with provider-specific configuration
 4. Create corresponding Secrets with credentials
-5. Create ResourceClaim with `spec.type: <your-provider-type>`
+5. Create ResourceBid with `spec.type: <your-provider-type>`
 
 No changes to the core controller or lease manager are needed!

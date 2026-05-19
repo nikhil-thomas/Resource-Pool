@@ -4,17 +4,17 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: resourceclaims.pool.dataverse.redhat.com
+  name: resourcebids.pool.dataverse.redhat.com
 spec:
   group: pool.dataverse.redhat.com
   names:
-    kind: ResourceClaim
-    listKind: ResourceClaimList
-    plural: resourceclaims
+    kind: ResourceBid
+    listKind: ResourceBidList
+    plural: resourcebids
     shortNames:
-    - rc
-    - rcs
-    singular: resourceclaim
+    - rb
+    - rbs
+    singular: resourcebid
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -33,7 +33,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ResourceClaim is the Schema for the resourceclaims API
+        description: ResourceBid is the Schema for the resourcebids API
         properties:
           apiVersion:
             description: |-
@@ -53,7 +53,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of ResourceClaim
+            description: spec defines the desired state of ResourceBid
             properties:
               leaseDuration:
                 default: 1h
@@ -86,7 +86,7 @@ spec:
             - type
             type: object
           status:
-            description: status defines the observed state of ResourceClaim
+            description: status defines the observed state of ResourceBid
             properties:
               acquiredAt:
                 description: AcquiredAt is the timestamp when the lease was successfully
@@ -165,7 +165,7 @@ spec:
               credentialSecretRef:
                 description: |-
                   CredentialSecretRef points to the Secret containing credentials
-                  Secret is in the same namespace as this ResourceClaim
+                  Secret is in the same namespace as this ResourceBid
                 properties:
                   name:
                     default: ""

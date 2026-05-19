@@ -21,8 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ResourceClaimSpec defines the desired state of ResourceClaim
-type ResourceClaimSpec struct {
+// ResourceBidSpec defines the desired state of ResourceBid
+type ResourceBidSpec struct {
 	// Type specifies the resource provider type (e.g., "snowflake", "postgres", "aws-account")
 	// This field is required and determines which provider will handle the resource
 	// +kubebuilder:validation:Required
@@ -48,8 +48,8 @@ type ResourceClaimSpec struct {
 	Priority int32 `json:"priority,omitempty"`
 }
 
-// ResourceClaimStatus defines the observed state of ResourceClaim
-type ResourceClaimStatus struct {
+// ResourceBidStatus defines the observed state of ResourceBid
+type ResourceBidStatus struct {
 	// Phase indicates the current lifecycle phase
 	// +kubebuilder:validation:Enum=Pending;Bound;Failed;Releasing
 	// +optional
@@ -75,7 +75,7 @@ type ResourceClaimStatus struct {
 	ConnectionDetails map[string]string `json:"connectionDetails,omitempty"`
 
 	// CredentialSecretRef points to the Secret containing credentials
-	// Secret is in the same namespace as this ResourceClaim
+	// Secret is in the same namespace as this ResourceBid
 	// +optional
 	CredentialSecretRef *corev1.LocalObjectReference `json:"credentialSecretRef,omitempty"`
 
@@ -93,38 +93,38 @@ type ResourceClaimStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:shortName=rc;rcs
+// +kubebuilder:resource:shortName=rb;rbs
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
 // +kubebuilder:printcolumn:name="Lease",type=string,JSONPath=`.status.leaseName`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// ResourceClaim is the Schema for the resourceclaims API
-type ResourceClaim struct {
+// ResourceBid is the Schema for the resourcebids API
+type ResourceBid struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// metadata is a standard object metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec defines the desired state of ResourceClaim
+	// spec defines the desired state of ResourceBid
 	// +required
-	Spec ResourceClaimSpec `json:"spec"`
+	Spec ResourceBidSpec `json:"spec"`
 
-	// status defines the observed state of ResourceClaim
+	// status defines the observed state of ResourceBid
 	// +optional
-	Status ResourceClaimStatus `json:"status,omitzero"`
+	Status ResourceBidStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
 
-// ResourceClaimList contains a list of ResourceClaim
-type ResourceClaimList struct {
+// ResourceBidList contains a list of ResourceBid
+type ResourceBidList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitzero"`
-	Items           []ResourceClaim `json:"items"`
+	Items           []ResourceBid `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&ResourceClaim{}, &ResourceClaimList{})
+	SchemeBuilder.Register(&ResourceBid{}, &ResourceBidList{})
 }

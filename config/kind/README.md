@@ -22,12 +22,12 @@ Expected output should show the cluster at `https://127.0.0.1:54384`
 ### 2. Install CRDs
 
 ```bash
-kubectl --kubeconfig=kind-resource-pool apply -f config/crd/bases/pool.dataverse.redhat.com_resourceclaims.yaml
+kubectl --kubeconfig=kind-resource-pool apply -f config/crd/bases/pool.dataverse.redhat.com_resourcebids.yaml
 ```
 
 Verify:
 ```bash
-kubectl --kubeconfig=kind-resource-pool get crd resourceclaims.pool.dataverse.redhat.com
+kubectl --kubeconfig=kind-resource-pool get crd resourcebids.pool.dataverse.redhat.com
 ```
 
 ### 3. Generate and Apply Secrets
@@ -93,26 +93,26 @@ resource-lease-snowflake-data-and-ai-test-cluster-1             5s
 resource-lease-snowflake-data-and-ai-test-cluster-2             5s
 ```
 
-### 7. Create a Test ResourceClaim
+### 7. Create a Test ResourceBid
 
 While the operator is running in debug mode:
 
 ```bash
-kubectl --kubeconfig=kind-resource-pool apply -f config/kind/test-resourceclaim.yaml
+kubectl --kubeconfig=kind-resource-pool apply -f config/kind/test-resourcebid.yaml
 ```
 
 **Watch the operator logs** in VSCode's Debug Console. You should see:
 ```
-INFO    Reconciling ResourceClaim   {"resourceclaim": "default/test-claim"}
+INFO    Reconciling ResourceBid   {"resourcebid": "default/test-bid"}
 INFO    Found free lease            {"lease": "resource-lease-snowflake-data-and-ai-test-cluster-1"}
-INFO    Acquired lease              {"claim": "default/test-claim", "lease": "resource-lease-snowflake-data-and-ai-test-cluster-1"}
-INFO    ResourceClaim bound         {"claim": "default/test-claim", "phase": "Bound"}
+INFO    Acquired lease              {"bid": "default/test-bid", "lease": "resource-lease-snowflake-data-and-ai-test-cluster-1"}
+INFO    ResourceBid bound         {"bid": "default/test-bid", "phase": "Bound"}
 ```
 
-### 8. Check Claim Status
+### 8. Check Bid Status
 
 ```bash
-kubectl --kubeconfig=kind-resource-pool get resourceclaim test-claim -o yaml
+kubectl --kubeconfig=kind-resource-pool get resourcebid test-bid -o yaml
 ```
 
 Expected status:
@@ -130,17 +130,17 @@ status:
     name: sf-cluster-1-creds
 ```
 
-### 9. Test Cleanup by Deleting Claim
+### 9. Test Cleanup by Deleting Bid
 
 ```bash
-kubectl --kubeconfig=kind-resource-pool delete resourceclaim test-claim
+kubectl --kubeconfig=kind-resource-pool delete resourcebid test-bid
 ```
 
 **Watch operator logs** for cleanup process:
 ```
-INFO    Finalizer cleanup started   {"claim": "default/test-claim"}
-INFO    Executing reset queries     {"claim": "default/test-claim", "queries": 3}
-INFO    Rotating credentials        {"claim": "default/test-claim"}
+INFO    Finalizer cleanup started   {"bid": "default/test-bid"}
+INFO    Executing reset queries     {"bid": "default/test-bid", "queries": 3}
+INFO    Rotating credentials        {"bid": "default/test-bid"}
 INFO    Lease released              {"lease": "resource-lease-snowflake-data-and-ai-test-cluster-1"}
 ```
 
@@ -155,14 +155,14 @@ The `spec.holderIdentity` should be empty.
 
 ### Setting Breakpoints
 
-1. Open files like [internal/controller/resourceclaim_controller.go](../../internal/controller/resourceclaim_controller.go)
+1. Open files like [internal/controller/resourcebid_controller.go](../../internal/controller/resourcebid_controller.go)
 2. Click in the left margin to set breakpoints
-3. Create a ResourceClaim to trigger reconciliation
+3. Create a ResourceBid to trigger reconciliation
 4. Step through code using VSCode debugger controls
 
 ### Useful Breakpoint Locations
 
-- [internal/controller/resourceclaim_controller.go:Reconcile](../../internal/controller/resourceclaim_controller.go) - Entry point for reconciliation
+- [internal/controller/resourcebid_controller.go:Reconcile](../../internal/controller/resourcebid_controller.go) - Entry point for reconciliation
 - [internal/lease/manager.go:AcquireFreeLease](../../internal/lease/manager.go) - Lease acquisition logic
 - [internal/provider/snowflake/provider.go:ReleaseResource](../../internal/provider/snowflake/provider.go) - Cleanup and rotation
 
@@ -171,8 +171,8 @@ The `spec.holderIdentity` should be empty.
 In a separate terminal, watch resources in real-time:
 
 ```bash
-# Watch all ResourceClaims
-kubectl --kubeconfig=kind-resource-pool get resourceclaims -w
+# Watch all ResourceBids
+kubectl --kubeconfig=kind-resource-pool get resourcebids -w
 
 # Watch all Leases
 kubectl --kubeconfig=kind-resource-pool get leases -w
@@ -235,7 +235,7 @@ kind create cluster --name resource-pool-kind --kubeconfig kind-resource-pool
 **Solution:**
 1. Make sure you're in Debug mode (not Run mode)
 2. Verify breakpoint has a red dot (not gray)
-3. Trigger reconciliation by creating/updating a ResourceClaim
+3. Trigger reconciliation by creating/updating a ResourceBid
 4. Check Debug Console for any errors
 
 ## Clean Up
@@ -243,7 +243,7 @@ kind create cluster --name resource-pool-kind --kubeconfig kind-resource-pool
 ### Delete Test Resources
 
 ```bash
-kubectl --kubeconfig=kind-resource-pool delete resourceclaim test-claim
+kubectl --kubeconfig=kind-resource-pool delete resourcebid test-bid
 kubectl --kubeconfig=kind-resource-pool delete leases -l pool.dataverse.redhat.com/resource-type=snowflake
 ```
 

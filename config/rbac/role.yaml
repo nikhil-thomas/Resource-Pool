@@ -37,7 +37,7 @@ rules:
 - apiGroups:
   - pool.dataverse.redhat.com
   resources:
-  - resourceclaims
+  - resourcebids
   verbs:
   - create
   - delete
@@ -49,13 +49,13 @@ rules:
 - apiGroups:
   - pool.dataverse.redhat.com
   resources:
-  - resourceclaims/finalizers
+  - resourcebids/finalizers
   verbs:
   - update
 - apiGroups:
   - pool.dataverse.redhat.com
   resources:
-  - resourceclaims/status
+  - resourcebids/status
   verbs:
   - get
   - patch

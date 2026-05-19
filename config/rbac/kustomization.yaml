@@ -22,7 +22,7 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the resource-pool itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
-- resourceclaim_admin_role.yaml
-- resourceclaim_editor_role.yaml
-- resourceclaim_viewer_role.yaml
+- resourcebid_admin_role.yaml
+- resourcebid_editor_role.yaml
+- resourcebid_viewer_role.yaml
 

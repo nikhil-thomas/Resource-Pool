@@ -201,7 +201,7 @@ func matchesLabels(leaseLabels, requiredLabels map[string]string) bool {
 	return true
 }
 
-// AcquireLease locks a lease for a ResourceClaim
+// AcquireLease locks a lease for a ResourceBid
 func (m *Manager) AcquireLease(ctx context.Context, lease *coordinationv1.Lease, holderIdentity string, duration time.Duration) error {
 	logger := log.FromContext(ctx)
 

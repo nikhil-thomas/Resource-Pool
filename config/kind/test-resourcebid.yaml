@@ -1,7 +1,7 @@
 apiVersion: pool.dataverse.redhat.com/v1alpha1
-kind: ResourceClaim
+kind: ResourceBid
 metadata:
-  name: test-claim
+  name: test-bid
   namespace: default
 spec:
   type: snowflake

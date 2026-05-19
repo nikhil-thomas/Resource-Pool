@@ -49,8 +49,8 @@ const (
 	requeueAfterError   = 1 * time.Minute
 )
 
-// ResourceClaimReconciler reconciles a ResourceClaim object
-type ResourceClaimReconciler struct {
+// ResourceBidReconciler reconciles a ResourceBid object
+type ResourceBidReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
 	LeaseManager     *lease.Manager
@@ -58,20 +58,20 @@ type ResourceClaimReconciler struct {
 	Namespace        string
 }
 
-// +kubebuilder:rbac:groups=pool.dataverse.redhat.com,resources=resourceclaims,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=pool.dataverse.redhat.com,resources=resourceclaims/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=pool.dataverse.redhat.com,resources=resourceclaims/finalizers,verbs=update
+// +kubebuilder:rbac:groups=pool.dataverse.redhat.com,resources=resourcebids,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=pool.dataverse.redhat.com,resources=resourcebids/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=pool.dataverse.redhat.com,resources=resourcebids/finalizers,verbs=update
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop
-func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ResourceBidReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	// Fetch ResourceClaim
-	claim := &poolv1alpha1.ResourceClaim{}
-	err := r.Get(ctx, req.NamespacedName, claim)
+	// Fetch ResourceBid
+	bid := &poolv1alpha1.ResourceBid{}
+	err := r.Get(ctx, req.NamespacedName, bid)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Object not found, could have been deleted after reconcile request
@@ -80,12 +80,12 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	log.Info("Reconciling ResourceClaim", "claim", claim)
+	log.Info("Reconciling ResourceBid", "bid", bid)
 	// Validate spec.type field
-	if claim.Spec.Type == "" {
-		claim.Status.Phase = phaseFailed
-		claim.Status.Message = "spec.type field is required"
-		if err := r.Status().Update(ctx, claim); err != nil {
+	if bid.Spec.Type == "" {
+		bid.Status.Phase = phaseFailed
+		bid.Status.Message = "spec.type field is required"
+		if err := r.Status().Update(ctx, bid); err != nil {
 			log.Error(err, "Failed to update status")
 			return ctrl.Result{}, err
 		}
@@ -93,11 +93,11 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Get provider from registry
-	prov, err := r.ProviderRegistry.Get(claim.Spec.Type)
+	prov, err := r.ProviderRegistry.Get(bid.Spec.Type)
 	if err != nil {
-		claim.Status.Phase = phaseFailed
-		claim.Status.Message = fmt.Sprintf("Unknown provider type: %s", claim.Spec.Type)
-		if err := r.Status().Update(ctx, claim); err != nil {
+		bid.Status.Phase = phaseFailed
+		bid.Status.Message = fmt.Sprintf("Unknown provider type: %s", bid.Spec.Type)
+		if err := r.Status().Update(ctx, bid); err != nil {
 			log.Error(err, "Failed to update status")
 			return ctrl.Result{}, err
 		}
@@ -105,14 +105,14 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Handle deletion (finalizer logic)
-	if !claim.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, claim, prov)
+	if !bid.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, bid, prov)
 	}
 
 	// Add finalizer if not present
-	if !controllerutil.ContainsFinalizer(claim, finalizerName) {
-		controllerutil.AddFinalizer(claim, finalizerName)
-		if err := r.Update(ctx, claim); err != nil {
+	if !controllerutil.ContainsFinalizer(bid, finalizerName) {
+		controllerutil.AddFinalizer(bid, finalizerName)
+		if err := r.Update(ctx, bid); err != nil {
 			return ctrl.Result{}, err
 		}
 		// Re-fetch after adding finalizer
@@ -120,22 +120,22 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// If already bound, check if lease is still valid
-	if claim.Status.Phase == phaseBound {
+	if bid.Status.Phase == phaseBound {
 		// Already bound, return (no-op)
 		// TODO: Optionally implement lease renewal logic here
 		return ctrl.Result{}, nil
 	}
 
 	// Try to acquire a lease
-	log.Info("Attempting to acquire lease for claim", "type", claim.Spec.Type)
+	log.Info("Attempting to acquire lease for bid", "type", bid.Spec.Type)
 
-	leaseLease, resourceName, err := r.LeaseManager.FindFreeLease(ctx, claim.Spec.Type, claim.Spec.RequiredLabels)
+	leaseLease, resourceName, err := r.LeaseManager.FindFreeLease(ctx, bid.Spec.Type, bid.Spec.RequiredLabels)
 	if err != nil {
 		// No free leases available
-		claim.Status.Phase = "Pending"
-		claim.Status.Message = fmt.Sprintf("Waiting for available resource: %v", err)
+		bid.Status.Phase = "Pending"
+		bid.Status.Message = fmt.Sprintf("Waiting for available resource: %v", err)
 
-		if updateErr := r.Status().Update(ctx, claim); updateErr != nil {
+		if updateErr := r.Status().Update(ctx, bid); updateErr != nil {
 			log.Error(updateErr, "Failed to update status to Pending")
 			return ctrl.Result{}, updateErr
 		}
@@ -146,11 +146,11 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Get resource details from provider — take a value copy so mutations below
 	// don't corrupt the shared registry entry.
-	resourcePtr := r.ProviderRegistry.GetResource(claim.Spec.Type, resourceName)
+	resourcePtr := r.ProviderRegistry.GetResource(bid.Spec.Type, resourceName)
 	if resourcePtr == nil {
-		claim.Status.Phase = phaseFailed
-		claim.Status.Message = fmt.Sprintf("Resource %s not found in provider cache", resourceName)
-		if err := r.Status().Update(ctx, claim); err != nil {
+		bid.Status.Phase = phaseFailed
+		bid.Status.Message = fmt.Sprintf("Resource %s not found in provider cache", resourceName)
+		if err := r.Status().Update(ctx, bid); err != nil {
 			log.Error(err, "Failed to update status")
 			return ctrl.Result{}, err
 		}
@@ -160,31 +160,31 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Determine lease duration
 	duration := 1 * time.Hour // default
-	if claim.Spec.LeaseDuration != nil {
-		duration = claim.Spec.LeaseDuration.Duration
+	if bid.Spec.LeaseDuration != nil {
+		duration = bid.Spec.LeaseDuration.Duration
 	}
 
 	// Acquire the lease
-	holderIdentity := fmt.Sprintf("%s/%s", claim.Namespace, claim.Name)
+	holderIdentity := fmt.Sprintf("%s/%s", bid.Namespace, bid.Name)
 	err = r.LeaseManager.AcquireLease(ctx, leaseLease, holderIdentity, duration)
 	if err != nil {
 		log.Error(err, "Failed to acquire lease")
-		claim.Status.Phase = phaseFailed
-		claim.Status.Message = fmt.Sprintf("Failed to acquire lease: %v", err)
-		if updateErr := r.Status().Update(ctx, claim); updateErr != nil {
+		bid.Status.Phase = phaseFailed
+		bid.Status.Message = fmt.Sprintf("Failed to acquire lease: %v", err)
+		if updateErr := r.Status().Update(ctx, bid); updateErr != nil {
 			log.Error(updateErr, "Failed to update status")
 			return ctrl.Result{}, updateErr
 		}
 		return ctrl.Result{RequeueAfter: requeueAfterError}, nil
 	}
 
-	// Call provider's AcquireResource hook — returns the name of the per-claim credential secret.
+	// Call provider's AcquireResource hook — returns the name of the per-bid credential secret.
 	secretName, err := prov.AcquireResource(ctx, resource, holderIdentity)
 	if err != nil {
 		log.Error(err, "Provider AcquireResource failed")
-		claim.Status.Phase = phaseFailed
-		claim.Status.Message = fmt.Sprintf("Failed to acquire resource: %v", err)
-		if updateErr := r.Status().Update(ctx, claim); updateErr != nil {
+		bid.Status.Phase = phaseFailed
+		bid.Status.Message = fmt.Sprintf("Failed to acquire resource: %v", err)
+		if updateErr := r.Status().Update(ctx, bid); updateErr != nil {
 			log.Error(updateErr, "Failed to update status")
 		}
 		if releaseErr := r.LeaseManager.ReleaseLease(ctx, leaseLease.Name); releaseErr != nil {
@@ -200,9 +200,9 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	connDetails, err := prov.GetConnectionDetails(ctx, resource)
 	if err != nil {
 		log.Error(err, "Failed to get connection details")
-		claim.Status.Phase = phaseFailed
-		claim.Status.Message = fmt.Sprintf("Failed to get connection details: %v", err)
-		if updateErr := r.Status().Update(ctx, claim); updateErr != nil {
+		bid.Status.Phase = phaseFailed
+		bid.Status.Message = fmt.Sprintf("Failed to get connection details: %v", err)
+		if updateErr := r.Status().Update(ctx, bid); updateErr != nil {
 			log.Error(updateErr, "Failed to update status")
 		}
 		// Release the lease since we failed
@@ -216,28 +216,28 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	now := metav1.Now()
 	expiresAt := metav1.NewTime(now.Add(duration))
 
-	claim.Status.Phase = "Bound"
-	claim.Status.LeaseName = leaseLease.Name
-	claim.Status.AcquiredAt = &now
-	claim.Status.ExpiresAt = &expiresAt
-	claim.Status.ConnectionDetails = connDetails
-	claim.Status.CredentialSecretRef = &corev1.LocalObjectReference{
+	bid.Status.Phase = "Bound"
+	bid.Status.LeaseName = leaseLease.Name
+	bid.Status.AcquiredAt = &now
+	bid.Status.ExpiresAt = &expiresAt
+	bid.Status.ConnectionDetails = connDetails
+	bid.Status.CredentialSecretRef = &corev1.LocalObjectReference{
 		Name: resource.CredentialSecretName,
 	}
-	claim.Status.Message = fmt.Sprintf("Successfully acquired %s (expires at %s)",
+	bid.Status.Message = fmt.Sprintf("Successfully acquired %s (expires at %s)",
 		leaseLease.Name,
 		expiresAt.Format(time.RFC3339))
 
 	// Update conditions
-	setCondition(&claim.Status, metav1.Condition{
+	setCondition(&bid.Status, metav1.Condition{
 		Type:               "Ready",
 		Status:             metav1.ConditionTrue,
-		ObservedGeneration: claim.Generation,
+		ObservedGeneration: bid.Generation,
 		Reason:             "LeaseAcquired",
 		Message:            "Resource is ready to use",
 	})
 
-	if err := r.Status().Update(ctx, claim); err != nil {
+	if err := r.Status().Update(ctx, bid); err != nil {
 		log.Error(err, "Failed to update status")
 		// Release the lease since we failed to update status
 		if releaseErr := r.LeaseManager.ReleaseLease(ctx, leaseLease.Name); releaseErr != nil {
@@ -246,59 +246,59 @@ func (r *ResourceClaimReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	log.Info("Successfully bound claim to resource",
+	log.Info("Successfully bound bid to resource",
 		"lease", leaseLease.Name,
 		"resource", resourceName,
-		"type", claim.Spec.Type,
+		"type", bid.Spec.Type,
 		"expiresAt", expiresAt.Format(time.RFC3339))
 
 	return ctrl.Result{}, nil
 }
 
-// handleDeletion handles cleanup when ResourceClaim is deleted
-func (r *ResourceClaimReconciler) handleDeletion(ctx context.Context, claim *poolv1alpha1.ResourceClaim, prov provider.ResourceProvider) (ctrl.Result, error) {
+// handleDeletion handles cleanup when ResourceBid is deleted
+func (r *ResourceBidReconciler) handleDeletion(ctx context.Context, bid *poolv1alpha1.ResourceBid, prov provider.ResourceProvider) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	if !controllerutil.ContainsFinalizer(claim, finalizerName) {
+	if !controllerutil.ContainsFinalizer(bid, finalizerName) {
 		return ctrl.Result{}, nil
 	}
 
-	log.Info("Handling deletion of ResourceClaim")
+	log.Info("Handling deletion of ResourceBid")
 
 	// Update phase to Releasing
-	if claim.Status.Phase != phaseReleasing {
-		claim.Status.Phase = phaseReleasing
-		claim.Status.Message = "Cleaning up resource"
-		if err := r.Status().Update(ctx, claim); err != nil {
+	if bid.Status.Phase != phaseReleasing {
+		bid.Status.Phase = phaseReleasing
+		bid.Status.Message = "Cleaning up resource"
+		if err := r.Status().Update(ctx, bid); err != nil {
 			log.Error(err, "Failed to update status to Releasing")
 		}
 	}
 
 	// If no lease was acquired, just remove finalizer
-	if claim.Status.LeaseName == "" {
+	if bid.Status.LeaseName == "" {
 		log.Info("No lease to release, removing finalizer")
-		controllerutil.RemoveFinalizer(claim, finalizerName)
-		return ctrl.Result{}, r.Update(ctx, claim)
+		controllerutil.RemoveFinalizer(bid, finalizerName)
+		return ctrl.Result{}, r.Update(ctx, bid)
 	}
 
 	// Get resource name from provider registry using lease
 	resourceName := ""
-	if claim.Status.LeaseName != "" {
+	if bid.Status.LeaseName != "" {
 		// Extract resource name from lease name
 		// Lease name format: resource-lease-<providerType>-<resourceName>
-		parts := len(lease.LeasePrefix) + len(claim.Spec.Type) + 1
-		if len(claim.Status.LeaseName) > parts {
-			resourceName = claim.Status.LeaseName[parts:]
+		parts := len(lease.LeasePrefix) + len(bid.Spec.Type) + 1
+		if len(bid.Status.LeaseName) > parts {
+			resourceName = bid.Status.LeaseName[parts:]
 		}
 	}
 
 	if resourceName == "" {
-		log.Error(nil, "Could not determine resource name from lease", "leaseName", claim.Status.LeaseName)
+		log.Error(nil, "Could not determine resource name from lease", "leaseName", bid.Status.LeaseName)
 	} else {
-		resource := r.ProviderRegistry.GetResource(claim.Spec.Type, resourceName)
+		resource := r.ProviderRegistry.GetResource(bid.Spec.Type, resourceName)
 		if resource != nil {
 			// Perform provider-specific cleanup
-			if err := prov.ReleaseResource(ctx, r.Namespace, *resource, fmt.Sprintf("%s/%s", claim.Namespace, claim.Name)); err != nil {
+			if err := prov.ReleaseResource(ctx, r.Namespace, *resource, fmt.Sprintf("%s/%s", bid.Namespace, bid.Name)); err != nil {
 				log.Error(err, "Failed to release resource", "resource", resourceName)
 				// Continue anyway to release lease - don't block deletion
 			}
@@ -306,25 +306,25 @@ func (r *ResourceClaimReconciler) handleDeletion(ctx context.Context, claim *poo
 	}
 
 	// Release the lease
-	if err := r.LeaseManager.ReleaseLease(ctx, claim.Status.LeaseName); err != nil {
+	if err := r.LeaseManager.ReleaseLease(ctx, bid.Status.LeaseName); err != nil {
 		log.Error(err, "Failed to release lease")
 		return ctrl.Result{}, err
 	}
 
-	log.Info("Released lease", "lease", claim.Status.LeaseName)
+	log.Info("Released lease", "lease", bid.Status.LeaseName)
 
 	// Remove finalizer
-	controllerutil.RemoveFinalizer(claim, finalizerName)
-	if err := r.Update(ctx, claim); err != nil {
+	controllerutil.RemoveFinalizer(bid, finalizerName)
+	if err := r.Update(ctx, bid); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	log.Info("Successfully cleaned up ResourceClaim")
+	log.Info("Successfully cleaned up ResourceBid")
 	return ctrl.Result{}, nil
 }
 
 // setCondition sets or updates a condition in the status
-func setCondition(status *poolv1alpha1.ResourceClaimStatus, newCondition metav1.Condition) {
+func setCondition(status *poolv1alpha1.ResourceBidStatus, newCondition metav1.Condition) {
 	newCondition.LastTransitionTime = metav1.Now()
 
 	for i, condition := range status.Conditions {
@@ -340,9 +340,9 @@ func setCondition(status *poolv1alpha1.ResourceClaimStatus, newCondition metav1.
 }
 
 // SetupWithManager sets up the controller with the Manager
-func (r *ResourceClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *ResourceBidReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&poolv1alpha1.ResourceClaim{}).
-		Named("resourceclaim").
+		For(&poolv1alpha1.ResourceBid{}).
+		Named("resourcebid").
 		Complete(r)
 }

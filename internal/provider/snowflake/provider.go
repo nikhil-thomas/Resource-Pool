@@ -171,10 +171,10 @@ func (p *SnowflakeProvider) GetCredentialSecret(ctx context.Context, namespace s
 const appUser = "test_runner_appuser"
 
 // AcquireResource creates the app user in Snowflake, generates a fresh key pair,
-// stores the private key in a per-claim Secret, and returns the Secret name.
-func (p *SnowflakeProvider) AcquireResource(ctx context.Context, resource provider.Resource, claimName string) (string, error) {
+// stores the private key in a per-bid Secret, and returns the Secret name.
+func (p *SnowflakeProvider) AcquireResource(ctx context.Context, resource provider.Resource, bidName string) (string, error) {
 	logger := logf.FromContext(ctx)
-	logger.Info("Acquiring Snowflake resource", "resource", resource.Name, "claim", claimName)
+	logger.Info("Acquiring Snowflake resource", "resource", resource.Name, "bid", bidName)
 
 	// Find account config
 	var account *SnowflakeAccount
@@ -190,8 +190,8 @@ func (p *SnowflakeProvider) AcquireResource(ctx context.Context, resource provid
 
 	// Load admin credentials from the pool secret
 	adminSecret := &corev1.Secret{}
-	// claimName is "namespace/name"
-	namespace, _, _ := strings.Cut(claimName, "/")
+	// bidName is "namespace/name"
+	namespace, _, _ := strings.Cut(bidName, "/")
 	if err := p.client.Get(ctx, client.ObjectKey{
 		Name:      resource.CredentialSecretName,
 		Namespace: namespace,
@@ -240,11 +240,11 @@ func (p *SnowflakeProvider) AcquireResource(ctx context.Context, resource provid
 		return "", fmt.Errorf("failed to set public key: %w", err)
 	}
 
-	// Derive a deterministic secret name from the claim identity
-	// claimName = "namespace/name" → "sf-appuser-namespace-name"
-	secretName := "sf-appuser-" + strings.ReplaceAll(claimName, "/", "-")
+	// Derive a deterministic secret name from the bid identity
+	// bidName = "namespace/name" → "sf-appuser-namespace-name"
+	secretName := "sf-appuser-" + strings.ReplaceAll(bidName, "/", "-")
 
-	// Create or update the per-claim Secret
+	// Create or update the per-bid Secret
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
@@ -278,13 +278,13 @@ func (p *SnowflakeProvider) AcquireResource(ctx context.Context, resource provid
 // ReleaseResource cleans up after a claim is deleted:
 //  1. Runs reset queries as the app user (best-effort)
 //  2. Unsets both RSA key slots for the app user (via admin)
-//  3. Deletes the per-claim app user Secret from Kubernetes
+//  3. Deletes the per-bid app user Secret from Kubernetes
 //
 // The bootstrap admin secret is never modified — it holds long-lived service
 // account credentials that must remain stable across all acquire/release cycles.
-func (p *SnowflakeProvider) ReleaseResource(ctx context.Context, namespace string, resource provider.Resource, claimName string) error {
+func (p *SnowflakeProvider) ReleaseResource(ctx context.Context, namespace string, resource provider.Resource, bidName string) error {
 	log := logf.FromContext(ctx)
-	log.Info("Releasing Snowflake resource", "resource", resource.Name, "claim", claimName)
+	log.Info("Releasing Snowflake resource", "resource", resource.Name, "bid", bidName)
 
 	// Find account config
 	var account *SnowflakeAccount
@@ -323,10 +323,10 @@ func (p *SnowflakeProvider) ReleaseResource(ctx context.Context, namespace strin
 	defer func() { _ = adminClient.Close() }()
 
 	// Step 1: Run reset queries as the app user (best-effort)
-	appUserSecretName := "sf-appuser-" + strings.ReplaceAll(claimName, "/", "-")
+	appUserSecretName := "sf-appuser-" + strings.ReplaceAll(bidName, "/", "-")
 	appUserSecret := &corev1.Secret{}
-	claimNamespace, _, _ := strings.Cut(claimName, "/")
-	err = p.client.Get(ctx, client.ObjectKey{Name: appUserSecretName, Namespace: claimNamespace}, appUserSecret)
+	bidNamespace, _, _ := strings.Cut(bidName, "/")
+	err = p.client.Get(ctx, client.ObjectKey{Name: appUserSecretName, Namespace: bidNamespace}, appUserSecret)
 	if err != nil && !apierrors.IsNotFound(err) {
 		log.Error(err, "Failed to look up app user secret, skipping reset queries", "secret", appUserSecretName)
 	} else if err == nil {

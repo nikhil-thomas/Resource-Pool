@@ -31,7 +31,7 @@ import (
 	"github.com/nikhil-thomas/Resource-Pool/internal/provider"
 )
 
-var _ = Describe("ResourceClaim Controller", func() {
+var _ = Describe("ResourceBid Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
@@ -41,18 +41,18 @@ var _ = Describe("ResourceClaim Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		resourceclaim := &poolv1alpha1.ResourceClaim{}
+		resourcebid := &poolv1alpha1.ResourceBid{}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind ResourceClaim")
-			err := k8sClient.Get(ctx, typeNamespacedName, resourceclaim)
+			By("creating the custom resource for the Kind ResourceBid")
+			err := k8sClient.Get(ctx, typeNamespacedName, resourcebid)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &poolv1alpha1.ResourceClaim{
+				resource := &poolv1alpha1.ResourceBid{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					Spec: poolv1alpha1.ResourceClaimSpec{
+					Spec: poolv1alpha1.ResourceBidSpec{
 						Type: "snowflake",
 					},
 				}
@@ -61,19 +61,19 @@ var _ = Describe("ResourceClaim Controller", func() {
 		})
 
 		AfterEach(func() {
-			resource := &poolv1alpha1.ResourceClaim{}
+			resource := &poolv1alpha1.ResourceBid{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			if errors.IsNotFound(err) {
 				return
 			}
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance ResourceClaim")
+			By("Cleanup the specific resource instance ResourceBid")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &ResourceClaimReconciler{
+			controllerReconciler := &ResourceBidReconciler{
 				Client:           k8sClient,
 				Scheme:           k8sClient.Scheme(),
 				ProviderRegistry: provider.NewRegistry(),

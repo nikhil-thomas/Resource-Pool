@@ -1,9 +1,9 @@
 # This rule is not used by the project resource-pool itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants permissions to create, update, and delete resources within the pool.dataverse.redhat.com.
-# This role is intended for users who need to manage these resources
-# but should not control RBAC or manage permissions for others.
+# Grants read-only access to pool.dataverse.redhat.com resources.
+# This role is intended for users who need visibility into these resources
+# without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -11,23 +11,19 @@ metadata:
   labels:
     app.kubernetes.io/name: resource-pool
     app.kubernetes.io/managed-by: kustomize
-  name: resourceclaim-editor-role
+  name: resourcebid-viewer-role
 rules:
 - apiGroups:
   - pool.dataverse.redhat.com
   resources:
-  - resourceclaims
+  - resourcebids
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - pool.dataverse.redhat.com
   resources:
-  - resourceclaims/status
+  - resourcebids/status
   verbs:
   - get
